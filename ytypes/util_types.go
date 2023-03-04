@@ -187,7 +187,7 @@ func StringToType(t reflect.Type, s string) (reflect.Value, error) {
 
 	switch t.Kind() {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		u, err := strconv.ParseUint(s, 10, int(t.Size())*8)
+		u, err := util.ParseYangUint(s, int(t.Size())*8)
 		if err != nil {
 			return reflect.ValueOf(nil), fmt.Errorf("unable to convert %q to %v", s, t.Kind())
 		}
@@ -196,7 +196,7 @@ func StringToType(t reflect.Type, s string) (reflect.Value, error) {
 		// Convert fails here.
 		return reflect.ValueOf(u).Convert(t), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		u, err := strconv.ParseInt(s, 10, int(t.Size())*8)
+		u, err := util.ParseYangInt(s, int(t.Size())*8)
 		if err != nil {
 			return reflect.ValueOf(nil), fmt.Errorf("unable to convert %q to %v", s, t.Kind())
 		}
