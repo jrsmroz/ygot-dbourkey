@@ -1577,6 +1577,27 @@ func TestYangDefaultValueToGo(t *testing.T) {
 		inValue: "-129",
 		wantErr: true,
 	}, {
+		name:          "int8_hex_zero",
+		inType:        &yang.YangType{Kind: yang.Yint8},
+		inValue:       "0x0",
+		want:          "0x0",
+		wantKind:      yang.Yint8,
+		wantUnionName: "UnionInt8(0x0)",
+	}, {
+		name:          "int8_hex_positive",
+		inType:        &yang.YangType{Kind: yang.Yint8},
+		inValue:       "0x43",
+		want:          "0x43",
+		wantKind:      yang.Yint8,
+		wantUnionName: "UnionInt8(0x43)",
+	}, {
+		name:          "int8_hex_negative",
+		inType:        &yang.YangType{Kind: yang.Yint8},
+		inValue:       "-0x43",
+		want:          "-0x43",
+		wantKind:      yang.Yint8,
+		wantUnionName: "UnionInt8(-0x43)",
+	}, {
 		name:          "int16",
 		inType:        &yang.YangType{Kind: yang.Yint16},
 		inValue:       "-129",
@@ -1611,6 +1632,13 @@ func TestYangDefaultValueToGo(t *testing.T) {
 		want:          "8",
 		wantKind:      yang.Yuint16,
 		wantUnionName: "UnionUint16(8)",
+	}, {
+		name:          "uint16_hex_zero",
+		inType:        &yang.YangType{Kind: yang.Yuint16},
+		inValue:       "0x0",
+		want:          "0x0",
+		wantKind:      yang.Yuint16,
+		wantUnionName: "UnionUint16(0x0)",
 	}, {
 		name:          "uint32",
 		inType:        &yang.YangType{Kind: yang.Yuint32},

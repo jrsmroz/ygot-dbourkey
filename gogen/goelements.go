@@ -631,33 +631,32 @@ func (s *GoLangMapper) yangDefaultValueToGo(value string, args resolveTypeArgs, 
 		return enumDefaultValue(typedefName, value, goEnumPrefix), args.yangType.Kind, nil
 	}
 
-	signed := false
 	// Perform mapping of the default value to the Go snippet.
 	switch ykind := args.yangType.Kind; ykind {
 	case yang.Yint64, yang.Yint32, yang.Yint16, yang.Yint8:
-		signed = true
-		fallthrough
+		bits, err := util.YangIntTypeBits(ykind)
+		if err != nil {
+			return "", yang.Ynone, err
+		}
+		val, err := util.ParseYangInt(value, bits)
+		if err != nil {
+			return "", yang.Ynone, fmt.Errorf("default value conversion: unable to convert default value %q to %v: %v", value, ykind, err)
+		}
+		if err := ytypes.ValidateIntRestrictions(args.yangType, val); err != nil {
+			return "", yang.Ynone, fmt.Errorf("default value conversion: %q doesn't match int restrictions: %v", value, err)
+		}
+		return value, ykind, nil
 	case yang.Yuint64, yang.Yuint32, yang.Yuint16, yang.Yuint8:
 		bits, err := util.YangIntTypeBits(ykind)
 		if err != nil {
 			return "", yang.Ynone, err
 		}
-		if signed {
-			val, err := strconv.ParseInt(value, 10, bits)
-			if err != nil {
-				return "", yang.Ynone, fmt.Errorf("default value conversion: unable to convert default value %q to %v: %v", value, ykind, err)
-			}
-			if err := ytypes.ValidateIntRestrictions(args.yangType, val); err != nil {
-				return "", yang.Ynone, fmt.Errorf("default value conversion: %q doesn't match int restrictions: %v", value, err)
-			}
-		} else {
-			val, err := strconv.ParseUint(value, 10, bits)
-			if err != nil {
-				return "", yang.Ynone, fmt.Errorf("default value conversion: unable to convert default value %q to %v: %v", value, ykind, err)
-			}
-			if err := ytypes.ValidateUintRestrictions(args.yangType, val); err != nil {
-				return "", yang.Ynone, fmt.Errorf("default value conversion: %q doesn't match int restrictions: %v", value, err)
-			}
+		val, err := util.ParseYangUint(value, bits)
+		if err != nil {
+			return "", yang.Ynone, fmt.Errorf("default value conversion: unable to convert default value %q to %v: %v", value, ykind, err)
+		}
+		if err := ytypes.ValidateUintRestrictions(args.yangType, val); err != nil {
+			return "", yang.Ynone, fmt.Errorf("default value conversion: %q doesn't match int restrictions: %v", value, err)
 		}
 		return value, ykind, nil
 	case yang.Ydecimal64:
