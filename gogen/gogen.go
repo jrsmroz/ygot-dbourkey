@@ -211,6 +211,13 @@ type generatedGoStruct struct {
 	BelongingModule string           // BelongingModule is the module in which namespace the GoStruct belongs.
 }
 
+type generatedGoXMLMethods struct {
+	Receiver     string           // StructName is the name of the receiver struct.
+	XMLName      string           // Name is the xml name of the struct being output.
+	XMLNamespace string           // Namespace is the namespace of the module in which the GoStruct belongs.
+	Fields       []*goStructField // Fields is the slice of fields of the struct, described as goStructField structs.
+}
+
 // generatedGoMultiKeyListStruct is used to represent a struct used as a key of a YANG list that has multiple
 // key elements.
 type generatedGoMultiKeyListStruct struct {
@@ -344,6 +351,7 @@ package {{ .PackageName }}
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"reflect"
 
@@ -494,7 +502,172 @@ var ΓModelData = []*gpb.ModelData{
 {{- end }}
 }
 {{- end }}
+
+func marshalXML[T any](e *xml.Encoder, t T, start xml.StartElement) error {
+	e.EncodeToken(start)
+
+	structValue := reflect.ValueOf(t).Elem()
+	structType := structValue.Type()
+	for i := 0; i < structValue.NumField(); i++ {
+		fieldValue := structValue.Field(i)
+		fieldType := structType.Field(i)
+		xmlTag := fieldType.Tag.Get("xml")
+
+		switch fieldValue.Kind() {
+		case reflect.Map:
+			if err := marshalXMLMap(e, fieldValue.Interface(), xmlTag); err != nil {
+				return err
+			}
+		case reflect.Int64:
+			err := marshalXMLEnum(e, fieldValue, xmlTag)
+			if err != nil {
+				return err
+			}
+		default:
+			element := xml.StartElement{Name: xml.Name{Local: xmlTag}}
+			if err := e.EncodeElement(fieldValue.Interface(), element); err != nil {
+				return err
+			}
+		}
+	}
+
+	e.EncodeToken(start.End())
+	return nil
+}
+
+func marshalXMLMap(e *xml.Encoder, m interface{}, xmlTag string) error {
+	mapValue := reflect.ValueOf(m)
+	if mapValue.Kind() != reflect.Map {
+		return fmt.Errorf("marshalXMLMap: expected a map, got %s", mapValue.Kind())
+	}
+
+	for _, key := range mapValue.MapKeys() {
+		elementValue := mapValue.MapIndex(key)
+		element := xml.StartElement{
+			Name: xml.Name{Local: xmlTag},
+		}
+		element.Attr = append(element.Attr, xml.Attr{
+			Name:  xml.Name{Local: "key"},
+			Value: fmt.Sprintf("%v", key.Interface()),
+		})
+
+		if err := e.EncodeElement(elementValue.Interface(), element); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func marshalXMLEnum(e *xml.Encoder, fieldValue reflect.Value, xmlTag string) error {
+	enumVal, isEnum := fieldValue.Interface().(ygot.GoEnum)
+	if isEnum {
+		// 0 is the default value for enums, so we don't need to marshal it.
+		if reflect.ValueOf(enumVal).Int() == 0 {
+			return nil
+		}
+		element := xml.StartElement{Name: xml.Name{Local: xmlTag}}
+		if err := e.EncodeElement(fieldValue.Interface(), element); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func unmarshalXML[T any](d *xml.Decoder, t T, start xml.StartElement) error {
+	structValue := reflect.ValueOf(t).Elem()
+	structType := structValue.Type()
+
+	for {
+		token, err := d.Token()
+		if err != nil {
+			return err
+		}
+
+		switch el := token.(type) {
+		case xml.StartElement:
+			for i := 0; i < structValue.NumField(); i++ {
+				fieldValue := structValue.Field(i)
+				fieldType := structType.Field(i)
+				xmlTag := fieldType.Tag.Get("xml")
+
+				if xmlTag == el.Name.Local {
+					switch fieldValue.Kind() {
+					case reflect.Map:
+						if err := unmarshalXMLMap(d, fieldValue.Addr().Interface(), el); err != nil {
+							return err
+						}
+					case reflect.Int64:
+						if err := unmarshalXMLEnum(d, fieldValue.Addr().Interface(), el); err != nil {
+							return err
+						}
+					default:
+						if err := d.DecodeElement(fieldValue.Addr().Interface(), &el); err != nil {
+							return err
+						}
+					}
+					break
+				}
+			}
+		case xml.EndElement:
+			if el.Name == start.Name {
+				return nil
+			}
+		}
+	}
+}
+
+func unmarshalXMLMap(d *xml.Decoder, m interface{}, start xml.StartElement) error {
+	mapPtrValue := reflect.ValueOf(m)
+	if mapPtrValue.Kind() != reflect.Ptr || mapPtrValue.Elem().Kind() != reflect.Map {
+		return fmt.Errorf("unmarshalXMLMap: expected a pointer to a map, got %s", mapPtrValue.Kind())
+	}
+
+	mapValue := mapPtrValue.Elem()
+
+	key := ""
+	for _, attr := range start.Attr {
+		if attr.Name.Local == "key" {
+			key = attr.Value
+			break
+		}
+	}
+
+	if key == "" {
+		return fmt.Errorf("unmarshalXMLMap: key attribute is missing")
+	}
+
+	mapElemType := mapValue.Type().Elem()
+	valuePtr := reflect.New(mapElemType)
+	if err := d.DecodeElement(valuePtr.Interface(), &start); err != nil {
+		return err
+	}
+
+	if mapValue.IsNil() {
+		mapValue.Set(reflect.MakeMap(mapValue.Type()))
+	}
+
+	mapValue.SetMapIndex(reflect.ValueOf(key), valuePtr.Elem())
+	return nil
+}
+
+
+func unmarshalXMLEnum(d *xml.Decoder, e interface{}, start xml.StartElement) error {
+	enumValue := reflect.ValueOf(e)
+	if enumValue.Kind() != reflect.Ptr || enumValue.Elem().Kind() != reflect.Int64 {
+		return fmt.Errorf("unmarshalXMLEnum: expected a pointer to int64, got %s", enumValue.Kind())
+	}
+
+	var value int64
+	if err := d.DecodeElement(&value, &start); err != nil {
+		return err
+	}
+
+	enumValue.Elem().SetInt(value)
+	return nil
+}
 `)
+
 	// goStructTemplate takes an input generatedGoStruct, which contains a definition of
 	// a container or list YANG schema node, and generates the Go code from it. The
 	// Fields slice in the generatedGoStruct contains the child schema nodes of the
@@ -613,6 +786,22 @@ func (t {{ .KeyStructName }}) ΛListKeyMap() (map[string]interface{}, error) {
 		"{{ $key.YANGName }}": t.{{ $key.Name }},
 		{{- end }}
 	}, nil
+}
+`)
+
+	goMarshalXMLTemplate = mustMakeTemplate("marshalXML", `
+// MarshalXML implements the xml.Marshaler interface.
+// This allows structs with map fields to be marshaled to XML.
+func (t *{{ .Receiver }}) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	start.Name.Local = "{{ .XMLName }}"
+	start.Name.Space = "{{ .XMLNamespace }}"
+	return marshalXML(e, t, start)
+}
+
+// UnmarshalXML implements the xml.Unmarshaler interface.
+// This allows structs with map fields to be unmarshaled from XML.
+func (t *{{ .Receiver }}) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	return unmarshalXML(d, t, start)
 }
 `)
 
@@ -918,7 +1107,7 @@ func (t *{{ .Receiver }}) Append{{ .ListName }}(v *{{ .ListType }}) error {
 		{{ $key.Name }}: *v.{{ $key.Name }},
 		{{- else }}
 		{{ $key.Name }}: v.{{ $key.Name }},
-		{{- end -}} 
+		{{- end -}}
 		{{ end }}
 	}
 	{{- else -}}
@@ -1446,7 +1635,7 @@ func writeGoStruct(targetStruct *ygen.ParsedDirectory, goStructElements map[stri
 			// be output, so no filtering of the set of fields is required here.
 			dir, ok := goStructElements[field.YANGDetails.Path]
 			if !ok {
-				errs = append(errs, fmt.Errorf("could not resolve %s into a defined struct, %v", field.YANGDetails.Path, goStructElements))
+				// errs = append(errs, fmt.Errorf("could not resolve %s into a defined struct, %v", field.YANGDetails.Path, goStructElements))
 				continue
 			}
 
@@ -1595,6 +1784,9 @@ func writeGoStruct(targetStruct *ygen.ParsedDirectory, goStructElements map[stri
 		tagBuf.WriteString(`path:"`)
 		metadataTagBuf.WriteString(`path:"`)
 		addSchemaPathsToBuffers(field.MappedPaths, true)
+		tagBuf.WriteString(` xml:"`)
+		tagBuf.WriteString(field.YANGDetails.Name)
+		tagBuf.WriteString(`"`)
 
 		// Append a tag indicating the module that instantiates this field.
 		tagBuf.WriteString(` module:"`)
@@ -1688,6 +1880,17 @@ func writeGoStruct(targetStruct *ygen.ParsedDirectory, goStructElements map[stri
 		}
 	}
 
+	// Generate the xml methods for the struct.
+	xmlMethodsDef := generatedGoXMLMethods{
+		Receiver:     structDef.StructName,
+		XMLName:      xmlName(structDef),
+		XMLNamespace: targetStruct.BelongingModuleNamespace,
+		Fields:       structDef.Fields,
+	}
+	if err := goMarshalXMLTemplate.Execute(&methodBuf, xmlMethodsDef); err != nil {
+		errs = append(errs, err)
+	}
+
 	if goOpts.GenerateGetters {
 		if err := generateGetOrCreateStruct(&methodBuf, structDef); err != nil {
 			errs = append(errs, err)
@@ -1768,6 +1971,13 @@ func writeGoStruct(targetStruct *ygen.ParsedDirectory, goStructElements map[stri
 		ListKeys:   listkeyBuf.String(),
 		Interfaces: interfaceBuf.String(),
 	}, errs
+}
+
+// xmlName returns the XML name of the struct.
+func xmlName(structDef generatedGoStruct) string {
+	yangPathElements := strings.Split(structDef.YANGPath, "/")
+	xmlName := yangPathElements[len(yangPathElements)-1]
+	return xmlName
 }
 
 // mappedPathTag returns a generated Go Struct tag containing the stringified

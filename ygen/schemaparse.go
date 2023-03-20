@@ -44,10 +44,14 @@ func buildJSONTree(ms []*yang.Entry, dn map[string]string, fakeroot *yang.Entry,
 	for _, m := range ms {
 		annotateChildren(m, dn, inclDescriptions)
 		for _, ch := range util.Children(m) {
-			if _, ex := rootEntry.Dir[ch.Name]; ex {
-				return nil, fmt.Errorf("overlapping root children for key %s", ch.Name)
+			prefixedName := ch.Name
+			if ch.Prefix != nil {
+				prefixedName = fmt.Sprintf("%s:%s", ch.Prefix.Name, ch.Name)
 			}
-			rootEntry.Dir[ch.Name] = ch
+			if _, ex := rootEntry.Dir[prefixedName]; ex {
+				return nil, fmt.Errorf("overlapping root children for key %s", prefixedName)
+			}
+			rootEntry.Dir[prefixedName] = ch
 		}
 	}
 

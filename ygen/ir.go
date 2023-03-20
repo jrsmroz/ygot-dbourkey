@@ -407,7 +407,8 @@ type ParsedDirectory struct {
 	// namespace as this directory node.
 	// For more information on YANG's XML namespaces see
 	// https://datatracker.ietf.org/doc/html/rfc7950#section-5.3
-	BelongingModule string
+	BelongingModule          string
+	BelongingModuleNamespace string
 	// RootElementModule is the module in which the root of the YANG tree that the
 	// node is attached to was instantiated (rather than the module that
 	// has the same namespace as the node).

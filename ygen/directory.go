@@ -168,14 +168,15 @@ func getOrderedDirDetails(langMapper LangMapper, directory map[string]*Directory
 			definingModuleName = definingModule.Name
 		}
 		pd := &ParsedDirectory{
-			Name:              dir.Name,
-			Path:              util.SlicePathToString(dir.Path),
-			PackageName:       packageName,
-			IsFakeRoot:        dir.IsFakeRoot,
-			BelongingModule:   belongingModule,
-			DefiningModule:    definingModuleName,
-			RootElementModule: rootModule,
-			ConfigFalse:       !util.IsConfig(dir.Entry),
+			Name:                     dir.Name,
+			Path:                     util.SlicePathToString(dir.Path),
+			PackageName:              packageName,
+			IsFakeRoot:               dir.IsFakeRoot,
+			BelongingModule:          belongingModule,
+			BelongingModuleNamespace: dir.Entry.Namespace().Name,
+			DefiningModule:           definingModuleName,
+			RootElementModule:        rootModule,
+			ConfigFalse:              !util.IsConfig(dir.Entry),
 		}
 		switch {
 		case dir.Entry.IsList():
